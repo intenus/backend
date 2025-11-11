@@ -6,7 +6,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { databaseConfig } from './config/database.config';
 import { RequestLoggerMiddleware } from './common/middleware/logger.middleware';
 import { LoggerModule } from './common/logger/logger.module';
-
+import { RedisModule } from './modules/redis/redis.module';
 import { WalrusModule } from './modules/walrus/walrus.module';
 import { SuiModule } from './modules/sui/sui.module';
 import { RouterOptimizerModule } from './modules/router-optimizer/router-optimizer.module';
@@ -19,6 +19,7 @@ import { RouterOptimizerModule } from './modules/router-optimizer/router-optimiz
     }),
     TypeOrmModule.forRoot(databaseConfig()),
     LoggerModule,
+    RedisModule,
     WalrusModule,
     SuiModule,
     RouterOptimizerModule,
