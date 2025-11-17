@@ -85,11 +85,12 @@ export class IntentCollectorService {
         `Polling Walrus for intents in epoch ${epoch} since ${sinceTimestamp}`,
       );
 
-      return intents.filter(
-        (intent) =>
-          intent.timestamp > sinceTimestamp &&
-          !this.processedIntents.has(intent.intent_id),
-      );
+      return []
+      // return intents.filter(
+      //   (intent) =>
+      //     intent.timestamp > sinceTimestamp &&
+      //     !this.processedIntents.has(intent.intent_id),
+      // );
     } catch (error) {
       this.logger.error(
         `Failed to fetch intents from Walrus for epoch ${epoch}`,

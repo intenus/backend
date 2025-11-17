@@ -1,3 +1,8 @@
+/**
+ * @deprecated This module is deprecated and will be removed in future versions
+ * See DEPRECATED.ts for migration information
+ */
+
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { EventEmitterModule } from '@nestjs/event-emitter';

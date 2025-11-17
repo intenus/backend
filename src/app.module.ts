@@ -1,5 +1,6 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -9,11 +10,12 @@ import { walrusConfig } from './config/walrus.config';
 import { suiConfig } from './config/sui.config';
 import { RequestLoggerMiddleware } from './common/middleware/logger.middleware';
 import { LoggerModule } from './common/logger/logger.module';
-import { BatchModule } from './modules/batch/batch.module';
 import { RedisModule } from './modules/redis/redis.module';
 import { WalrusModule } from './modules/walrus/walrus.module';
 import { SuiModule } from './modules/sui/sui.module';
 import { DatasetModule } from './modules/dataset/dataset.module';
+import { ProcessingModule } from '../processing/processing.module';
+import { PreRankingModule } from './modules/preranking/preranking.module';
 
 @Module({
   imports: [
@@ -22,12 +24,15 @@ import { DatasetModule } from './modules/dataset/dataset.module';
       envFilePath: '.env',
       load: [redisConfig, walrusConfig, suiConfig],
     }),
+    EventEmitterModule.forRoot(),
     TypeOrmModule.forRoot(databaseConfig()),
     LoggerModule,
-    BatchModule,
-    RedisModule,
-    WalrusModule,
     SuiModule,
+    WalrusModule,
+    RedisModule,
+    PreRankingModule,
+    ProcessingModule,
+    // BatchModule, // Deprecated - see src/modules/batch/DEPRECATED.ts
     DatasetModule,
   ],
   controllers: [AppController],

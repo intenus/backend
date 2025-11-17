@@ -4,12 +4,18 @@ import type { IntenusWalrusClient, StorageResult } from '@intenus/walrus';
 import type { Signer } from '@mysten/sui/cryptography';
 import { IntenusWalrusClient as WalrusClient } from '@intenus/walrus';
 import type { WalrusConfig } from '../../config/walrus.config';
+import type { IGSIntent } from '../../common/types/igs-intent.types';
+import type { IGSSolution } from '../../common/types/igs-solution.types';
 
 /**
- * Walrus Service - Thin wrapper around @intenus/walrus SDK
+ * Walrus Service - Wrapper around @intenus/walrus SDK
+ * Handles fetching encrypted intents and solutions from Walrus
  * 
- * This is a minimal wrapper that exposes core functionality.
- * Using `any` for SDK types until they stabilize.
+ * Flow:
+ * 1. Receive on-chain event with Walrus blob ID
+ * 2. Fetch encrypted data from Walrus using blob ID
+ * 3. Decrypt using Sui Seal (handled by SDK)
+ * 4. Return typed intent/solution data
  */
 @Injectable()
 export class WalrusService implements OnModuleInit {
@@ -42,22 +48,59 @@ export class WalrusService implements OnModuleInit {
   // ===== INTENT OPERATIONS =====
 
   /**
-   * Verify blob exists on Walrus
+   * Fetch encrypted intent from Walrus and decrypt
+   * Called when IntentSubmitted event is received
+   */
+  async fetchIntent(blobId: string): Promise<IGSIntent> {
+    try {
+      this.logger.log(`Fetching intent from Walrus: ${blobId}`);
+      
+      const buffer = await this.client.fetchRaw(blobId);
+      const intent = JSON.parse(buffer.toString()) as IGSIntent;
+      
+      this.logger.log(`Intent fetched successfully: ${intent.object.userAddress}`);
+      return intent;
+    } catch (error: any) {
+      this.logger.error(`Failed to fetch intent from Walrus: ${error.message}`, error.stack);
+      throw new Error(`Intent not found on Walrus: ${blobId}`);
+    }
+  }
+
+  /**
+   * Fetch encrypted solution from Walrus and decrypt
+   * Called when SolutionSubmitted event is received
+   */
+  async fetchSolution(blobId: string): Promise<IGSSolution> {
+    try {
+      this.logger.log(`Fetching solution from Walrus: ${blobId}`);
+      
+      const buffer = await this.client.fetchRaw(blobId);
+      const solution = JSON.parse(buffer.toString()) as IGSSolution;
+      
+      this.logger.log(`Solution fetched successfully: ${solution.solverAddress}`);
+      return solution;
+    } catch (error: any) {
+      this.logger.error(`Failed to fetch solution from Walrus: ${error.message}`, error.stack);
+      throw new Error(`Solution not found on Walrus: ${blobId}`);
+    }
+  }
+
+  /**
+   * Verify blob exists on Walrus (lightweight check)
    */
   async verifyBlobExists(blobId: string): Promise<boolean> {
     const exists = await this.client.exists(blobId);
     if (!exists) {
-      throw new Error(`Intent not found on Walrus: ${blobId}`);
+      throw new Error(`Blob not found on Walrus: ${blobId}`);
     }
     return true;
   }
 
   /**
-   * Fetch intent from Walrus (for recovery)
+   * Fetch raw blob data
    */
-  async fetchIntent(blobId: string): Promise<any> {
-    const buffer = await this.client.fetchRaw(blobId);
-    return JSON.parse(buffer.toString());
+  async fetchRaw(blobId: string): Promise<Buffer> {
+    return this.client.fetchRaw(blobId);
   }
 
   // ===== BATCH OPERATIONS =====
@@ -252,17 +295,10 @@ export class WalrusService implements OnModuleInit {
   }
 
   /**
-   * Fetch raw data from Walrus
+   * Check if blob exists
    */
-  async fetchRaw(path: string): Promise<Buffer> {
-    return this.client.fetchRaw(path);
-  }
-
-  /**
-   * Check if path exists
-   */
-  async exists(path: string): Promise<boolean> {
-    return this.client.exists(path);
+  async exists(blobId: string): Promise<boolean> {
+    return this.client.exists(blobId);
   }
 
   /**
