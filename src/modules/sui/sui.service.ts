@@ -36,7 +36,6 @@ export class SuiService implements OnModuleInit {
   }
 
   async onModuleInit() {
-    // Initialize Sui client
     this.client = new SuiClient({
       url: this.config.rpcUrl || getFullnodeUrl(this.config.network),
     });
@@ -108,7 +107,6 @@ export class SuiService implements OnModuleInit {
       return;
     }
 
-    // Query for IntentSubmitted events
     const intentEvents = await this.queryEvents(
       {
         MoveEventType: `${packageId}::intents::IntentSubmitted`,
@@ -118,7 +116,6 @@ export class SuiService implements OnModuleInit {
       'ascending',
     );
 
-    // Query for SolutionSubmitted events
     const solutionEvents = await this.queryEvents(
       {
         MoveEventType: `${packageId}::solutions::SolutionSubmitted`,
@@ -128,12 +125,10 @@ export class SuiService implements OnModuleInit {
       'ascending',
     );
 
-    // Process intent events
     for (const event of intentEvents.data) {
       await this.processIntentEvent(event);
     }
 
-    // Process solution events
     for (const event of solutionEvents.data) {
       await this.processSolutionEvent(event);
     }
@@ -172,8 +167,6 @@ export class SuiService implements OnModuleInit {
       };
 
       this.logger.log(`Intent submitted: ${intentEvent.intentId} by ${intentEvent.userAddress}`);
-      
-      // Emit event for intent processing module
       this.eventEmitter.emit('intent.submitted', intentEvent);
     } catch (error: any) {
       this.logger.error(`Error processing intent event: ${error.message}`, error.stack);
@@ -196,8 +189,6 @@ export class SuiService implements OnModuleInit {
       };
 
       this.logger.log(`Solution submitted: ${solutionEvent.solutionId} for intent ${solutionEvent.intentId}`);
-      
-      // Emit event for solution processing
       this.eventEmitter.emit('solution.submitted', solutionEvent);
     } catch (error: any) {
       this.logger.error(`Error processing solution event: ${error.message}`, error.stack);

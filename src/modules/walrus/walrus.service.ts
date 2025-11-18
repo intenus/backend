@@ -1,16 +1,18 @@
 import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { HttpModule, HttpService } from '@nestjs/axios';
 import type { IntenusWalrusClient, StorageResult } from '@intenus/walrus';
 import type { Signer } from '@mysten/sui/cryptography';
 import { IntenusWalrusClient as WalrusClient } from '@intenus/walrus';
 import type { WalrusConfig } from '../../config/walrus.config';
 import type { IGSIntent } from '../../common/types/igs-intent.types';
 import type { IGSSolution } from '../../common/types/igs-solution.types';
+import { firstValueFrom } from 'rxjs';
 
 /**
  * Walrus Service - Wrapper around @intenus/walrus SDK
  * Handles fetching encrypted intents and solutions from Walrus
- * 
+ *
  * Flow:
  * 1. Receive on-chain event with Walrus blob ID
  * 2. Fetch encrypted data from Walrus using blob ID
@@ -22,28 +24,30 @@ export class WalrusService implements OnModuleInit {
   private readonly logger = new Logger(WalrusService.name);
   private client: IntenusWalrusClient;
   private config: WalrusConfig;
+  private readonly walrusUrl: string = 'https://walrus.xyz/v1/blobs/';
 
-  constructor(private configService: ConfigService) {
+  constructor(
+    private configService: ConfigService,
+    private readonly http: HttpService,
+  ) {
     this.config = this.configService.get<WalrusConfig>('walrus')!;
   }
 
   async onModuleInit() {
     try {
-      // Initialize Walrus client
-      // Note: devnet maps to testnet in the SDK
-      const network = this.config.network === 'devnet' ? 'testnet' : this.config.network;
-      
+      const network =
+        this.config.network === 'devnet' ? 'testnet' : this.config.network;
+
       this.client = new WalrusClient({
         network: network as 'mainnet' | 'testnet',
       });
-      
+
       this.logger.log(`Walrus client initialized for ${network}`);
     } catch (error) {
       this.logger.error('Failed to initialize Walrus client', error);
       throw error;
     }
   }
-  
 
   // ===== INTENT OPERATIONS =====
 
@@ -54,14 +58,48 @@ export class WalrusService implements OnModuleInit {
   async fetchIntent(blobId: string): Promise<IGSIntent> {
     try {
       this.logger.log(`Fetching intent from Walrus: ${blobId}`);
-      
+
       const buffer = await this.client.fetchRaw(blobId);
       const intent = JSON.parse(buffer.toString()) as IGSIntent;
-      
-      this.logger.log(`Intent fetched successfully: ${intent.object.userAddress}`);
+
+      this.logger.log(
+        `Intent fetched successfully: ${intent.object.userAddress}`,
+      );
       return intent;
     } catch (error: any) {
-      this.logger.error(`Failed to fetch intent from Walrus: ${error.message}`, error.stack);
+      this.logger.error(
+        `Failed to fetch intent from Walrus: ${error.message}`,
+        error.stack,
+      );
+      throw new Error(`Intent not found on Walrus: ${blobId}`);
+    }
+  }
+
+  /**
+   * Fetch encrypted intent from Walrus via HTTP and decrypt
+   * Called when IntentSubmitted event is received
+   */
+  async fetchIntentHttp(blobId: string): Promise<IGSIntent> {
+    try {
+      this.logger.log(`Fetching intent from Walrus via HTTP: ${blobId}`);
+      
+      const response = await firstValueFrom(
+        this.http.get<Buffer>(`${this.walrusUrl}${blobId}`, {
+          responseType: 'arraybuffer',
+        }),
+      );
+      const buffer = Buffer.from(response.data);
+      const intent = JSON.parse(buffer.toString()) as IGSIntent;
+
+      this.logger.log(
+        `Intent fetched successfully via HTTP: ${intent.object.userAddress}`,
+      );
+      return intent;
+    } catch (error: any) {
+      this.logger.error(
+        `Failed to fetch intent from Walrus via HTTP: ${error.message}`,
+        error.stack,
+      );
       throw new Error(`Intent not found on Walrus: ${blobId}`);
     }
   }
@@ -73,14 +111,49 @@ export class WalrusService implements OnModuleInit {
   async fetchSolution(blobId: string): Promise<IGSSolution> {
     try {
       this.logger.log(`Fetching solution from Walrus: ${blobId}`);
-      
+
       const buffer = await this.client.fetchRaw(blobId);
       const solution = JSON.parse(buffer.toString()) as IGSSolution;
-      
-      this.logger.log(`Solution fetched successfully: ${solution.solverAddress}`);
+
+      this.logger.log(
+        `Solution fetched successfully: ${solution.solverAddress}`,
+      );
       return solution;
     } catch (error: any) {
-      this.logger.error(`Failed to fetch solution from Walrus: ${error.message}`, error.stack);
+      this.logger.error(
+        `Failed to fetch solution from Walrus: ${error.message}`,
+        error.stack,
+      );
+      throw new Error(`Solution not found on Walrus: ${blobId}`);
+    }
+  }
+
+  /**
+   * Fetch encrypted solution from Walrus via HTTP and decrypt
+   * Called when SolutionSubmitted event is received
+   */
+  async fetchSolutionHttp(blobId: string): Promise<IGSSolution> {
+    try {
+      this.logger.log(`Fetching solution from Walrus via HTTP: ${blobId}`);
+
+      const response = await firstValueFrom(
+        this.http.get<Buffer>(`${this.walrusUrl}${blobId}`, {
+          responseType: 'arraybuffer',
+        }),
+      );
+
+      const buffer = Buffer.from(response.data);
+      const solution = JSON.parse(buffer.toString()) as IGSSolution;
+
+      this.logger.log(
+        `Solution fetched successfully via HTTP: ${solution.solverAddress}`,
+      );
+      return solution;
+    } catch (error: any) {
+      this.logger.error(
+        `Failed to fetch solution from Walrus via HTTP: ${error.message}`,
+        error.stack,
+      );
       throw new Error(`Solution not found on Walrus: ${blobId}`);
     }
   }
@@ -140,25 +213,33 @@ export class WalrusService implements OnModuleInit {
     epochs?: number,
   ): Promise<any> {
     // Use underlying client directly for now
-    return (this.client.batches as any).storeIntents?.(
-      intents,
-      batchId,
-      signer,
-      epochs,
-    ) || Promise.reject(new Error('storeIntents not implemented in SDK yet'));
+    return (
+      (this.client.batches as any).storeIntents?.(
+        intents,
+        batchId,
+        signer,
+        epochs,
+      ) || Promise.reject(new Error('storeIntents not implemented in SDK yet'))
+    );
   }
 
   /**
    * Fetch intents by epoch
    */
-  async fetchIntentsByEpoch(epoch: number): Promise<Array<{
-    intent_id: string;
-    data: any;
-    category: string;
-  }>> {
+  async fetchIntentsByEpoch(epoch: number): Promise<
+    Array<{
+      intent_id: string;
+      data: any;
+      category: string;
+    }>
+  > {
     // Use underlying client directly for now
-    return (this.client.batches as any).fetchIntentsByEpoch?.(epoch) || 
-      Promise.reject(new Error('fetchIntentsByEpoch not implemented in SDK yet'));
+    return (
+      (this.client.batches as any).fetchIntentsByEpoch?.(epoch) ||
+      Promise.reject(
+        new Error('fetchIntentsByEpoch not implemented in SDK yet'),
+      )
+    );
   }
 
   // ===== ARCHIVE OPERATIONS =====
@@ -189,10 +270,7 @@ export class WalrusService implements OnModuleInit {
   /**
    * Store user history
    */
-  async storeUserHistory(
-    history: any,
-    signer: Signer,
-  ): Promise<StorageResult> {
+  async storeUserHistory(history: any, signer: Signer): Promise<StorageResult> {
     return this.client.users.storeHistory(history, signer);
   }
 
@@ -223,13 +301,16 @@ export class WalrusService implements OnModuleInit {
     metadata: any,
     signer: Signer,
   ): Promise<any> {
-    return (this.client.training as any).storeDataset?.(
-      version,
-      features,
-      labels,
-      metadata,
-      signer,
-    ) || Promise.reject(new Error('storeDataset not fully implemented in SDK'));
+    return (
+      (this.client.training as any).storeDataset?.(
+        version,
+        features,
+        labels,
+        metadata,
+        signer,
+      ) ||
+      Promise.reject(new Error('storeDataset not fully implemented in SDK'))
+    );
   }
 
   /**
@@ -243,29 +324,37 @@ export class WalrusService implements OnModuleInit {
     metadata: any,
     signer: Signer,
   ): Promise<any> {
-    return (this.client.training as any).storeModel?.(
-      modelName,
-      version,
-      modelBuffer,
-      metadata,
-      signer,
-    ) || Promise.reject(new Error('storeModel not fully implemented in SDK'));
+    return (
+      (this.client.training as any).storeModel?.(
+        modelName,
+        version,
+        modelBuffer,
+        metadata,
+        signer,
+      ) || Promise.reject(new Error('storeModel not fully implemented in SDK'))
+    );
   }
 
   /**
    * Fetch training dataset metadata
    */
   async fetchDatasetMetadata(metadataBlobId: string): Promise<any> {
-    return (this.client.training as any).fetchDatasetMetadata?.(metadataBlobId) ||
-      Promise.reject(new Error('fetchDatasetMetadata not implemented in SDK yet'));
+    return (
+      (this.client.training as any).fetchDatasetMetadata?.(metadataBlobId) ||
+      Promise.reject(
+        new Error('fetchDatasetMetadata not implemented in SDK yet'),
+      )
+    );
   }
 
   /**
    * Fetch model metadata
    */
   async fetchModelMetadata(metadataBlobId: string): Promise<any> {
-    return (this.client.training as any).fetchModelMetadata?.(metadataBlobId) ||
-      Promise.reject(new Error('fetchModelMetadata not implemented in SDK yet'));
+    return (
+      (this.client.training as any).fetchModelMetadata?.(metadataBlobId) ||
+      Promise.reject(new Error('fetchModelMetadata not implemented in SDK yet'))
+    );
   }
 
   /**
@@ -276,8 +365,14 @@ export class WalrusService implements OnModuleInit {
     modelName: string,
     version: string,
   ): Promise<Buffer> {
-    return (this.client.training as any).fetchModel?.(modelBlobId, modelName, version) ||
-      Promise.reject(new Error('fetchModel signature may have changed in SDK'));
+    return (
+      (this.client.training as any).fetchModel?.(
+        modelBlobId,
+        modelName,
+        version,
+      ) ||
+      Promise.reject(new Error('fetchModel signature may have changed in SDK'))
+    );
   }
 
   // ===== LOW-LEVEL OPERATIONS =====

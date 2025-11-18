@@ -25,6 +25,7 @@
     "@mysten/seal": "^0.9.3",
     "@mysten/sui": "^1.44.0",
     "@mysten/walrus": "^0.8.3",
+    "@nestjs/axios": "^4.0.1",
     "@nestjs/common": "^10.0.0",
     "@nestjs/config": "^4.0.2",
     "@nestjs/core": "^10.0.0",
