@@ -88,7 +88,7 @@ export class WalrusService implements OnModuleInit {
           responseType: 'arraybuffer',
         }),
       );
-      const buffer = Buffer.from(response.data);
+      const buffer = Buffer.from(response.data as any);
       const intent = JSON.parse(buffer.toString()) as IGSIntent;
 
       this.logger.log(
@@ -142,7 +142,7 @@ export class WalrusService implements OnModuleInit {
         }),
       );
 
-      const buffer = Buffer.from(response.data);
+      const buffer = Buffer.from(response.data as any);
       const solution = JSON.parse(buffer.toString()) as IGSSolution;
 
       this.logger.log(

@@ -48,7 +48,7 @@ export class DefiLlamaProvider {
         this.httpService.get<DefiLlamaPriceResponse>(url),
       );
 
-      const data = response.data;
+      const data = response.data as DefiLlamaPriceResponse;
       
       if (!data.coins || Object.keys(data.coins).length === 0) {
         throw new Error(`No price data found for: ${coins}`);
@@ -92,7 +92,7 @@ export class DefiLlamaProvider {
         this.httpService.get<DefiLlamaChartResponse>(url),
       );
 
-      const data = response.data;
+      const data = response.data as DefiLlamaChartResponse;
       
       if (!data.coins || Object.keys(data.coins).length === 0) {
         throw new Error(`No historical data found for: ${coins}`);

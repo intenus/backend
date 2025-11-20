@@ -43,7 +43,7 @@ export class SuiService implements OnModuleInit {
     
     this.logger.log(`Sui client initialized for ${this.config.network}`);
     
-    // Load cursor from Redis to resume from last processed event
+    // Try to load cursor from Redis (may be null if Redis not ready yet)
     const savedCursor = await this.redisService.getEventCursor();
     if (savedCursor) {
       this.eventCursor = savedCursor;
@@ -54,8 +54,25 @@ export class SuiService implements OnModuleInit {
     
     // Auto-start event listening if configured
     if (this.config.autoStartEventListener !== false) {
-      await this.startEventListener();
+      // Defer start to ensure all modules are initialized
+      setTimeout(() => this.initializeWithCursor(), 1000);
     }
+  }
+
+  /**
+   * Initialize with cursor after all modules are ready
+   */
+  private async initializeWithCursor() {
+    // Try to load cursor again in case it wasn't available during onModuleInit
+    if (!this.eventCursor) {
+      const savedCursor = await this.redisService.getEventCursor();
+      if (savedCursor) {
+        this.eventCursor = savedCursor;
+        this.logger.log(`Restored event cursor after Redis ready: ${savedCursor.eventSeq}`);
+      }
+    }
+    
+    await this.startEventListener();
   }
 
   // ===== EVENT LISTENING OPERATIONS =====

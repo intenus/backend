@@ -29,33 +29,40 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     private readonly config: ConfigType<typeof redisConfig>,
   ) {}
 
-  onModuleInit() {
+  async onModuleInit() {
     this.client = new Redis(this.config);
     this.logger.log('Redis client initialized');
   }
 
-  getClient() {
+  private ensureClient(): Redis {
+    if (!this.client) {
+      throw new Error('Redis client not initialized. Make sure RedisService.onModuleInit() has completed.');
+    }
     return this.client;
   }
 
+  getClient() {
+    return this.ensureClient();
+  }
+
   getPubClient() {
-    return this.client.duplicate();
+    return this.ensureClient().duplicate();
   }
 
   getSubClient() {
-    return this.client.duplicate();
+    return this.ensureClient().duplicate();
   }
 
   async get(key: string): Promise<string | null> {
-    return this.client.get(key);
+    return this.ensureClient().get(key);
   }
 
   async set(key: string, value: string): Promise<'OK'> {
-    return this.client.set(key, value);
+    return this.ensureClient().set(key, value);
   }
 
   async setWithExpiry(key: string, value: string, seconds: number): Promise<'OK'> {
-    return this.client.set(key, value, 'EX', seconds);
+    return this.ensureClient().set(key, value, 'EX', seconds);
   }
 
   // ===== INTENT STORAGE =====
@@ -65,7 +72,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
    */
   async storeIntent(intentId: string, intent: IntentWithIGS): Promise<void> {
     const key = `${this.INTENT_PREFIX}${intentId}`;
-    await this.client.set(key, JSON.stringify(intent), 'EX', 3600); // 1 hour TTL
+    await this.ensureClient().set(key, JSON.stringify(intent), 'EX', 3600); // 1 hour TTL
     this.logger.log(`Stored intent ${intentId} in Redis`);
   }
 
@@ -74,7 +81,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
    */
   async getIntent(intentId: string): Promise<IntentWithIGS | null> {
     const key = `${this.INTENT_PREFIX}${intentId}`;
-    const data = await this.client.get(key);
+    const data = await this.ensureClient().get(key);
     return data ? JSON.parse(data) : null;
   }
 
@@ -94,10 +101,10 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     },
   ): Promise<void> {
     const key = `${this.SOLUTION_PREFIX}${intentId}:${solutionId}`;
-    await this.client.set(key, JSON.stringify(data), 'EX', 3600);
+    await this.ensureClient().set(key, JSON.stringify(data), 'EX', 3600);
     
     // Also add to a set for easy retrieval
-    await this.client.sadd(`${this.SOLUTION_PREFIX}${intentId}:passed`, solutionId);
+    await this.ensureClient().sadd(`${this.SOLUTION_PREFIX}${intentId}:passed`, solutionId);
     
     this.logger.log(`Stored solution ${solutionId} for intent ${intentId}`);
   }
@@ -115,10 +122,10 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     },
   ): Promise<void> {
     const key = `${this.FAILED_SOLUTION_PREFIX}${intentId}:${solutionId}`;
-    await this.client.set(key, JSON.stringify(data), 'EX', 3600);
+    await this.ensureClient().set(key, JSON.stringify(data), 'EX', 3600);
     
     // Add to failed set
-    await this.client.sadd(`${this.FAILED_SOLUTION_PREFIX}${intentId}:set`, solutionId);
+    await this.ensureClient().sadd(`${this.FAILED_SOLUTION_PREFIX}${intentId}:set`, solutionId);
     
     this.logger.log(`Stored failed solution ${solutionId} for intent ${intentId}`);
   }
@@ -127,12 +134,12 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
    * Get all passed solutions for an intent
    */
   async getPassedSolutions(intentId: string): Promise<any[]> {
-    const solutionIds = await this.client.smembers(`${this.SOLUTION_PREFIX}${intentId}:passed`);
+    const solutionIds = await this.ensureClient().smembers(`${this.SOLUTION_PREFIX}${intentId}:passed`);
     
     const solutions = await Promise.all(
       solutionIds.map(async (solutionId) => {
         const key = `${this.SOLUTION_PREFIX}${intentId}:${solutionId}`;
-        const data = await this.client.get(key);
+        const data = await this.ensureClient().get(key);
         return data ? JSON.parse(data) : null;
       }),
     );
@@ -144,7 +151,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
    * Get failed solution count
    */
   async getFailedSolutionCount(intentId: string): Promise<number> {
-    return this.client.scard(`${this.FAILED_SOLUTION_PREFIX}${intentId}:set`);
+    return this.ensureClient().scard(`${this.FAILED_SOLUTION_PREFIX}${intentId}:set`);
   }
 
   // ===== RANKING SERVICE INTEGRATION =====
@@ -154,7 +161,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
    * Uses a Redis list as a queue that the ranking service monitors
    */
   async sendToRankingService(intentId: string, data: any): Promise<void> {
-    await this.client.lpush(this.RANKING_QUEUE, JSON.stringify(data));
+    await this.ensureClient().lpush(this.RANKING_QUEUE, JSON.stringify(data));
     this.logger.log(`Sent intent ${intentId} to ranking service queue`);
   }
 
@@ -164,7 +171,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
    * Store event cursor for resuming after restart
    */
   async storeEventCursor(cursor: { eventSeq: string; txDigest: string }): Promise<void> {
-    await this.client.set(this.EVENT_CURSOR_KEY, JSON.stringify(cursor));
+    await this.ensureClient().set(this.EVENT_CURSOR_KEY, JSON.stringify(cursor));
     this.logger.debug(`Updated event cursor: ${cursor.eventSeq}`);
   }
 
@@ -172,6 +179,10 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
    * Get stored event cursor
    */
   async getEventCursor(): Promise<{ eventSeq: string; txDigest: string } | null> {
+    // Return null if client not initialized yet (during startup)
+    if (!this.client) {
+      return null;
+    }
     const data = await this.client.get(this.EVENT_CURSOR_KEY);
     return data ? JSON.parse(data) : null;
   }
@@ -183,8 +194,8 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
    */
   async deleteIntentData(intentId: string): Promise<void> {
     // Get all solution IDs
-    const passedIds = await this.client.smembers(`${this.SOLUTION_PREFIX}${intentId}:passed`);
-    const failedIds = await this.client.smembers(`${this.FAILED_SOLUTION_PREFIX}${intentId}:set`);
+    const passedIds = await this.ensureClient().smembers(`${this.SOLUTION_PREFIX}${intentId}:passed`);
+    const failedIds = await this.ensureClient().smembers(`${this.FAILED_SOLUTION_PREFIX}${intentId}:set`);
     
     // Delete all keys
     const keysToDelete = [
@@ -196,14 +207,16 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     ];
     
     if (keysToDelete.length > 0) {
-      await this.client.del(...keysToDelete);
+      await this.ensureClient().del(...keysToDelete);
     }
     
     this.logger.log(`Deleted all data for intent ${intentId}`);
   }
 
   async onModuleDestroy() {
-    await this.client.quit();
-    this.logger.log('Redis client disconnected');
+    if (this.client) {
+      await this.client.quit();
+      this.logger.log('Redis client disconnected');
+    }
   }
 }

@@ -13,6 +13,8 @@ import type {
   CetusConfig,
 } from '../../common/types/source-map.types';
 import type { IGSIntent } from '../../common/types/igs-intent.types';
+import * as path from 'path';
+import * as fs from 'fs';
 
 @Injectable()
 export class SourceMapService {
@@ -32,7 +34,9 @@ export class SourceMapService {
 
   private async loadSourceMap(): Promise<void> {
     try {
-      this.sourceMap = require('./source/source-map.json');
+      const sourceMapPath = path.join(__dirname, 'source', 'source-map.json');
+      const sourceMapContent = fs.readFileSync(sourceMapPath, 'utf-8');
+      this.sourceMap = JSON.parse(sourceMapContent);
       this.logger.log(`Loaded source map with ${Object.keys(this.sourceMap.sources).length} sources`);
     } catch (error) {
       this.logger.error('Failed to load source map', error);
